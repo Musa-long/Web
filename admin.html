@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NaijaPay Admin Dashboard</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#f5f7fb;color:#18212f}
+header{background:#0b6b4f;color:white;padding:16px 5%;display:flex;justify-content:space-between;align-items:center}.logo{font-size:23px;font-weight:800}
+.container{max-width:1200px;margin:25px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}.card{background:white;border-radius:16px;padding:19px;box-shadow:0 7px 25px #18212f12;margin-bottom:18px}
+.stat{font-size:27px;font-weight:800;margin-top:6px}.muted{color:#687386}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}.tabs button{width:auto;margin:0}
+button{border:0;border-radius:9px;padding:10px 14px;background:#0b6b4f;color:white;font-weight:800;cursor:pointer}.danger{background:#b42318}.secondary{background:#e9f5f0;color:#0b6b4f}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #edf0f4;vertical-align:top}th{background:#f8fafc}.scroll{overflow:auto}
+.badge{padding:5px 8px;border-radius:20px;background:#f1f3f5;display:inline-block}.pending{background:#fff8e8;color:#725400}.approved{background:#e9f8ef;color:#146c3b}.rejected{background:#fff0ef;color:#b42318}
+.hidden{display:none}.msg{margin:10px 0;font-weight:700}.error{color:#b42318}.success{color:#146c3b}@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><div class="logo">NaijaPay Admin</div><button class="secondary" onclick="logout()">Logout</button></header>
+<main class="container">
+<div id="login" class="card"><h2>Administrator Login</h2><p class="muted">Use the administrator credentials configured on the server.</p>
+<input id="email" type="email" placeholder="Admin email" style="width:100%;padding:12px;margin:6px 0;border:1px solid #d8dee8;border-radius:9px">
+<input id="password" type="password" placeholder="Password" style="width:100%;padding:12px;margin:6px 0;border:1px solid #d8dee8;border-radius:9px"><button onclick="login()">Login</button><div id="loginMsg" class="msg"></div></div>
+<div id="dash" class="hidden">
+<div class="grid"><div class="card"><div class="muted">Users</div><div id="usersCount" class="stat">0</div></div><div class="card"><div class="muted">Pending deposits</div><div id="depCount" class="stat">0</div></div><div class="card"><div class="muted">Pending withdrawals</div><div id="withCount" class="stat">0</div></div><div class="card"><div class="muted">Total wallet balances</div><div id="balance" class="stat">₦0</div></div></div>
+<div class="tabs"><button onclick="show('deposits')">Deposits</button><button class="secondary" onclick="show('withdrawals')">Withdrawals</button><button class="secondary" onclick="show('users')">Users</button></div>
+<div id="msg" class="msg"></div><div id="panel" class="card"></div></div></main>
+<script>
+let token=localStorage.getItem('naijapay_admin_token');
+const $=id=>document.getElementById(id);
+function api(url,opt={}){opt.headers={...(opt.headers||{}),'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})};return fetch(url,opt).then(async r=>{let d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed');return d})}
+function login(){api('/api/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})}).then(d=>{if(d.user.role!=='admin')throw new Error('This account is not an administrator.');token=d.token;localStorage.setItem('naijapay_admin_token',token);openDash()}).catch(e=>{$('loginMsg').textContent=e.message;$('loginMsg').className='msg error'})}
+async function openDash(){try{await api('/api/admin/summary');$('login').classList.add('hidden');$('dash').classList.remove('hidden');await refresh();show('deposits')}catch(e){localStorage.removeItem('naijapay_admin_token');token=null}}
+async function refresh(){let d=await api('/api/admin/summary');$('usersCount').textContent=d.users;$('depCount').textContent=d.pendingDeposits;$('withCount').textContent=d.pendingWithdrawals;$('balance').textContent='₦'+Number(d.totalWalletBalance).toLocaleString('en-NG',{minimumFractionDigits:2})}
+function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function show(type){try{let d;if(type==='deposits'){d=await api('/api/admin/deposits');$('panel').innerHTML='<h2>Deposit Requests</h2><div class="scroll"><table><tr><th>User</th><th>Amount</th><th>Reference</th><th>Status</th><th>Action</th></tr>'+d.deposits.map(x=>`<tr><td>${esc(x.full_name)}<br><small>${esc(x.email)}<br>${esc(x.wallet_id)}</small></td><td>₦${Number(x.amount).toLocaleString()}</td><td>${esc(x.reference)}</td><td><span class="badge ${x.status}">${esc(x.status)}</span></td><td>${x.status==='pending'?`<button onclick="act('/api/admin/deposits/${x.id}/approve','Deposit approved')">Approve</button> <button class="danger" onclick="act('/api/admin/deposits/${x.id}/reject','Deposit rejected')">Reject</button>`:'—'}</td></tr>`).join('')+'</table></div>'}
+else if(type==='withdrawals'){d=await api('/api/admin/withdrawals');$('panel').innerHTML='<h2>Withdrawal Requests</h2><div class="scroll"><table><tr><th>User</th><th>Amount</th><th>Bank details</th><th>Status</th><th>Action</th></tr>'+d.withdrawals.map(x=>`<tr><td>${esc(x.full_name)}<br><small>${esc(x.email)}<br>${esc(x.wallet_id)}</small></td><td>₦${Number(x.amount).toLocaleString()}</td><td>${esc(x.bank_name)}<br>${esc(x.account_name)}<br>${esc(x.account_number)}</td><td><span class="badge ${x.status}">${esc(x.status)}</span></td><td>${x.status==='pending'?`<button onclick="act('/api/admin/withdrawals/${x.id}/approve','Withdrawal approved')">Approve</button> <button class="danger" onclick="act('/api/admin/withdrawals/${x.id}/reject','Withdrawal rejected; funds returned')">Reject</button>`:'—'}</td></tr>`).join('')+'</table></div>'}
+else {d=await api('/api/admin/users');$('panel').innerHTML='<h2>Registered Users</h2><div class="scroll"><table><tr><th>Name</th><th>Email</th><th>Phone</th><th>Wallet</th><th>Balance</th><th>Role</th></tr>'+d.users.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.email)}</td><td>${esc(x.phone)}</td><td>${esc(x.wallet_id)}</td><td>₦${Number(x.balance).toLocaleString()}</td><td>${esc(x.role)}</td></tr>`).join('')+'</table></div>'}}
+catch(e){$('msg').textContent=e.message;$('msg').className='msg error'}}
+async function act(url,text){try{let d=await api(url,{method:'POST'});$('msg').textContent=d.message||text;$('msg').className='msg success';await refresh();await show(url.includes('withdrawals')?'withdrawals':'deposits')}catch(e){$('msg').textContent=e.message;$('msg').className='msg error'}}
+function logout(){localStorage.removeItem('naijapay_admin_token');location.reload()}
+if(token)openDash();
+</script></body></html>
